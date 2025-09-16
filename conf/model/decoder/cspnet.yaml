@@ -1,12 +1,12 @@
 _target_: diffcsp.pl_modules.cspnet.CSPNet
 hidden_dim: 512
 latent_dim: 0
-max_atoms: 100
+max_atoms: 300
 num_layers: 6
 act_fn: silu
 dis_emb: sin
 num_freqs: 128
-edge_style: fc
+edge_style: knn
 max_neighbors: ${model.max_neighbors}
 cutoff: ${model.radius}
 ln: true

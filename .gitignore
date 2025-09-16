@@ -164,3 +164,10 @@ singlerun/
 wandb/
 runs/
 clean/
+
+data/
+hydra/
+oc20_s2ef_2M/
+oc20_s2ef_20M/
+*.tar.gz
+*.pkl

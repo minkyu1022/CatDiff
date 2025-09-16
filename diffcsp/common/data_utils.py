@@ -170,7 +170,7 @@ def get_symmetry_info(crystal, tol=0.01):
     )
     return crystal, sym_info
 
-def build_crystal_graph(crystal, graph_method='crystalnn'):
+def build_crystal_graph(crystal, adsorbate_types, adsorbate_local_distances, adsorbate_num_atoms, graph_method='crystalnn'):
     """
     """
 
@@ -210,7 +210,7 @@ def build_crystal_graph(crystal, graph_method='crystalnn'):
     to_jimages = np.array(to_jimages)
     num_atoms = atom_types.shape[0]
 
-    return frac_coords, atom_types, lengths, angles, edge_indices, to_jimages, num_atoms
+    return frac_coords, atom_types, lengths, angles, edge_indices, to_jimages, num_atoms, adsorbate_types, adsorbate_local_distances, adsorbate_num_atoms
 
 
 def abs_cap(val, max_abs_val=1):
@@ -490,6 +490,10 @@ def repeat_blocks(
     # Get total size of output array, as needed to initialize output indexing array
     N = (sizes * repeats).sum()
 
+    # Handle empty case
+    if N == 0:
+        return torch.empty(0, dtype=torch.long, device=sizes.device)
+
     # Initialize indexing array with ones as we need to setup incremental indexing
     # within each group when cumulatively summed at the final stage.
     # Two steps here:
@@ -689,13 +693,14 @@ def radius_graph_pbc(pos, lengths, angles, natoms, radius, max_num_neighbors_thr
     # Remove pairs that are too far apart
     
     
-    radius_real = (min_dist.min(dim=-1)[0] + 0.01)#.clamp(max=radius)
+    radius_real = (min_dist.max(dim=-1)[0] + 0.01).clamp(max=radius)
     
     radius_real = torch.repeat_interleave(radius_real, num_atoms_per_image_sqr * num_cells)
 
-    # print(min_dist.min(dim=-1)[0])
+    # print(f"Using configured radius: {radius}")
     
-    # radius_real = radius
+    # Original buggy code (commented out):
+    # radius_real = (min_dist.min(dim=-1)[0] + 0.01)
     
     mask_within_radius = torch.le(atom_distance_sqr, radius_real * radius_real)
     # Remove pairs with the same atoms (distance = 0.0)
@@ -1156,6 +1161,10 @@ def get_scaler_from_data_list(data_list, key):
 
 def process_one(row, niggli, primitive, graph_method, prop_list, use_space_group = False, tol=0.01):
     crystal_str = row['cif']
+    adsorbate_types = row['adsorbate_types']
+    adsorbate_local_distances = row['adsorbate_local_distances']
+    adsorbate_num_atoms = row['adsorbate_num_atoms']
+    
     crystal = build_crystal(
         crystal_str, niggli=niggli, primitive=primitive)
     result_dict = {}
@@ -1164,10 +1173,11 @@ def process_one(row, niggli, primitive, graph_method, prop_list, use_space_group
         result_dict.update(sym_info)
     else:
         result_dict['spacegroup'] = 1
-    graph_arrays = build_crystal_graph(crystal, graph_method)
+    graph_arrays = build_crystal_graph(crystal, adsorbate_types, adsorbate_local_distances, adsorbate_num_atoms, graph_method)
     properties = {k: row[k] for k in prop_list if k in row.keys()}
     result_dict.update({
-        'mp_id': row['material_id'],
+        # 'mp_id': row['material_id'],
+        'system_id': row['system_id'],
         'cif': crystal_str,
         'graph_arrays': graph_arrays
     })
@@ -1190,9 +1200,13 @@ def preprocess(input_file, num_workers, niggli, primitive, graph_method,
         [tol] * len(df),
         num_cpus=num_workers)
 
-    mpid_to_results = {result['mp_id']: result for result in unordered_results}
-    ordered_results = [mpid_to_results[df.iloc[idx]['material_id']]
+    
+    sysid_to_results = {result['system_id']: result for result in unordered_results}
+    ordered_results = [sysid_to_results[df.iloc[idx]['system_id']]
                        for idx in range(len(df))]
+    # mpid_to_results = {result['mp_id']: result for result in unordered_results}
+    # ordered_results = [mpid_to_results[df.iloc[idx]['material_id']]
+    #                    for idx in range(len(df))]
 
     return ordered_results
 
@@ -1236,7 +1250,7 @@ def add_scaled_lattice_prop(data_list, lattice_scale_method):
         # the indexes are brittle if more objects are returned
         lengths = graph_arrays[2]
         angles = graph_arrays[3]
-        num_atoms = graph_arrays[-1]
+        num_atoms = graph_arrays[6]  # Fix: num_atoms is at index 6, not -1
         assert lengths.shape[0] == angles.shape[0] == 3
         assert isinstance(num_atoms, int)
 

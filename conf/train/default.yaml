@@ -6,8 +6,8 @@ random_seed: 42
 
 pl_trainer:
   fast_dev_run: False # Enable this for debug purposes
-  gpus: 1
-  # accelerator: ddp
+  gpus: 4
+  accelerator: ddp
   precision: 32
   # max_steps: 10000
   max_epochs: ${data.train_max_epochs}
@@ -16,8 +16,10 @@ pl_trainer:
   gradient_clip_val: 0.5
   gradient_clip_algorithm: value
   profiler: simple
+  # plugins:
+  #   find_unused_parameters: False  # Optimize DDP performance
 
-monitor_metric: 'val_loss'
+monitor_metric: 'train_loss_epoch'
 monitor_metric_mode: 'min'
 
 early_stopping:

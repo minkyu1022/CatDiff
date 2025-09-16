@@ -70,7 +70,11 @@ train_dist = {
             0.00972877358490566,
             0.053176591981132074,
             0.010576356132075472,
-            0.08995430424528301]
+            0.08995430424528301],
+    
+    'oc20_dense_small': [np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.09090909090909091), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.09090909090909091), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.18181818181818182), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.36363636363636365), np.float64(0.0), np.float64(0.0), np.float64(0.09090909090909091), np.float64(0.09090909090909091), np.float64(0.0), np.float64(0.09090909090909091)],
+    
+    'oc20_dense_medium': [np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.008316008316008316), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.014701514701514701), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.01381051381051381), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.04291654291654292), np.float64(0.0), np.float64(0.0), np.float64(0.016780516780516782), np.float64(0.019305019305019305), np.float64(0.0), np.float64(0.005494505494505495), np.float64(0.0), np.float64(0.10632610632610633), np.float64(0.0), np.float64(0.0), np.float64(0.012622512622512622), np.float64(0.0847935847935848), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.023017523017523016), np.float64(0.0), np.float64(0.04351054351054351), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.4106029106029106), np.float64(0.0), np.float64(0.005346005346005346), np.float64(0.0), np.float64(0.012771012771012771), np.float64(0.0), np.float64(0.05197505197505198), np.float64(0.0), np.float64(0.026136026136026135), np.float64(0.0), np.float64(0.0), np.float64(0.0), np.float64(0.10157410157410157)]
 }
 
 

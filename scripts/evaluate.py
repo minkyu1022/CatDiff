@@ -1,6 +1,10 @@
 import time
 import argparse
 import torch
+import warnings
+
+# Suppress all warnings for cleaner output
+warnings.filterwarnings("ignore")
 
 from tqdm import tqdm
 from torch.optim import Adam
@@ -22,7 +26,7 @@ import numpy as np
 
 def diffusion(loader, model, num_evals, step_lr = 1e-5):
 
-    frac_coords = []
+    coords = []
     num_atoms = []
     atom_types = []
     lattices = []
@@ -31,20 +35,20 @@ def diffusion(loader, model, num_evals, step_lr = 1e-5):
 
         if torch.cuda.is_available():
             batch.cuda()
-        batch_all_frac_coords = []
+        batch_all_coords = []
         batch_all_lattices = []
-        batch_frac_coords, batch_num_atoms, batch_atom_types = [], [], []
+        batch_coords, batch_num_atoms, batch_atom_types = [], [], []
         batch_lattices = []
         for eval_idx in range(num_evals):
 
             print(f'batch {idx} / {len(loader)}, sample {eval_idx} / {num_evals}')
             outputs, traj = model.sample(batch, step_lr = step_lr)
-            batch_frac_coords.append(outputs['frac_coords'].detach().cpu())
+            batch_coords.append(outputs['coords'].detach().cpu())
             batch_num_atoms.append(outputs['num_atoms'].detach().cpu())
             batch_atom_types.append(outputs['atom_types'].detach().cpu())
             batch_lattices.append(outputs['lattices'].detach().cpu())
 
-        frac_coords.append(torch.stack(batch_frac_coords, dim=0))
+        coords.append(torch.stack(batch_coords, dim=0))
         num_atoms.append(torch.stack(batch_num_atoms, dim=0))
         atom_types.append(torch.stack(batch_atom_types, dim=0))
         lattices.append(torch.stack(batch_lattices, dim=0))
@@ -52,7 +56,7 @@ def diffusion(loader, model, num_evals, step_lr = 1e-5):
         input_data_list = input_data_list + batch.to_data_list()
 
 
-    frac_coords = torch.cat(frac_coords, dim=1)
+    coords = torch.cat(coords, dim=1)
     num_atoms = torch.cat(num_atoms, dim=1)
     atom_types = torch.cat(atom_types, dim=1)
     lattices = torch.cat(lattices, dim=1)
@@ -61,7 +65,7 @@ def diffusion(loader, model, num_evals, step_lr = 1e-5):
 
 
     return (
-        frac_coords, atom_types, lattices, lengths, angles, num_atoms, input_data_batch
+        coords, atom_types, lattices, lengths, angles, num_atoms, input_data_batch
     )
 
 
@@ -70,7 +74,7 @@ def main(args):
     # load_data if do reconstruction.
     model_path = Path(args.model_path)
     model, test_loader, cfg = load_model(
-        model_path, load_data=True)
+        model_path, load_data=True, testing=True)
 
     if torch.cuda.is_available():
         model.to('cuda')
@@ -82,7 +86,7 @@ def main(args):
 
 
     start_time = time.time()
-    (frac_coords, atom_types, lattices, lengths, angles, num_atoms, input_data_batch) = diffusion(
+    (coords, atom_types, lattices, lengths, angles, num_atoms, input_data_batch) = diffusion(
         test_loader, model, args.num_evals, step_lr)
 
     if args.label == '':
@@ -93,7 +97,7 @@ def main(args):
     torch.save({
         'eval_setting': args,
         'input_data_batch': input_data_batch,
-        'frac_coords': frac_coords,
+        'coords': coords,
         'num_atoms': num_atoms,
         'atom_types': atom_types,
         'lattices': lattices,

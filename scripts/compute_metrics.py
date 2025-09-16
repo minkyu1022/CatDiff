@@ -321,11 +321,11 @@ def get_file_paths(root_path, task, label='', suffix='pt'):
 def get_crystal_array_list(file_path, batch_idx=0):
     data = load_data(file_path)
     if batch_idx == -1:
-        batch_size = data['frac_coords'].shape[0]
+        batch_size = data['coords'].shape[0]
         crys_array_list = []
         for i in range(batch_size):
             tmp_crys_array_list = get_crystals_list(
-                data['frac_coords'][i],
+                data['coords'][i],
                 data['atom_types'][i],
                 data['lengths'][i],
                 data['angles'][i],
@@ -333,14 +333,14 @@ def get_crystal_array_list(file_path, batch_idx=0):
             crys_array_list.append(tmp_crys_array_list)
     elif batch_idx == -2:
         crys_array_list = get_crystals_list(
-            data['frac_coords'],
+            data['coords'],
             data['atom_types'],
             data['lengths'],
             data['angles'],
             data['num_atoms'])        
     else:
         crys_array_list = get_crystals_list(
-            data['frac_coords'][batch_idx],
+            data['coords'][batch_idx],
             data['atom_types'][batch_idx],
             data['lengths'][batch_idx],
             data['angles'][batch_idx],
@@ -371,13 +371,32 @@ def get_gt_crys_ori(cif):
         'lengths': np.array(lattice.abc),
         'angles': np.array(lattice.angles)
     }
+    return Crystal(crys_array_dict)
+
+def get_gt_crys_from_csv(row):
+    """Parse crystal data from CSV row format"""
+    import ast
+    
+    # Parse string representations to actual arrays
+    atom_types = np.array(ast.literal_eval(row['atom_types']))
+    lengths = np.array(ast.literal_eval(row['lengths']))
+    angles = np.array(ast.literal_eval(row['angles']))
+    frac_coords = np.array(ast.literal_eval(row['frac_coords']))
+    
+    crys_array_dict = {
+        'frac_coords': frac_coords,
+        'atom_types': atom_types,
+        'lengths': lengths,
+        'angles': angles
+    }
     return Crystal(crys_array_dict) 
 
 def main(args):
     all_metrics = {}
 
     cfg = load_config(args.root_path)
-    eval_model_name = cfg.data.eval_model_name
+    # eval_model_name = cfg.data.eval_model_name
+    eval_model_name = None
 
     if 'opt' in args.tasks:
         opt_file_path = get_file_paths(args.root_path, 'opt', args.label)
@@ -396,7 +415,7 @@ def main(args):
         gen_crys = p_map(lambda x: Crystal(x), crys_array_list)
         if args.gt_file != '':
             csv = pd.read_csv(args.gt_file)
-            gt_crys = p_map(get_gt_crys_ori, csv['cif'])
+            gt_crys = p_map(get_gt_crys_from_csv, [csv.iloc[i] for i in range(len(csv))])
         else:
             _, true_crystal_array_list = get_crystal_array_list(
                 recon_file_path)
@@ -415,7 +434,7 @@ def main(args):
             recon_file_path, batch_idx = batch_idx)
         if args.gt_file != '':
             csv = pd.read_csv(args.gt_file)
-            gt_crys = p_map(get_gt_crys_ori, csv['cif'])
+            gt_crys = p_map(get_gt_crys_from_csv, [csv.iloc[i] for i in range(len(csv))])
         else:
             gt_crys = p_map(lambda x: Crystal(x), true_crystal_array_list)
 

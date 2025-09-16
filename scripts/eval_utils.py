@@ -34,18 +34,33 @@ recommand_step_lr = {
         "perov_5": 5e-7,
         "carbon_24": 5e-6,
         "mp_20": 1e-5,
-        "mpts_52": 1e-5
+        "mp_20_small": 1e-5,
+        "mpts_52": 1e-5,
+        "oc20_dense_small": 1e-5,
+        "oc20_dense_medium": 1e-5,
+        "oc20_dense": 1e-5,
+        "oc20_2M": 1e-5
     },
     'csp_multi':{
         "perov_5": 5e-7,
         "carbon_24": 5e-7,
         "mp_20": 1e-5,
-        "mpts_52": 1e-5
+        "mp_20_small": 1e-5,
+        "mpts_52": 1e-5,
+        "oc20_dense_small": 1e-5,
+        "oc20_dense_medium": 1e-5,
+        "oc20_dense": 1e-5,
+        "oc20_2M": 1e-5
     },
     'gen':{
         "perov_5": 1e-6,
         "carbon_24": 1e-5,
-        "mp_20": 5e-6
+        "mp_20": 5e-6,
+        "mp_20_small": 5e-6,
+        "oc20_dense_small": 5e-6,
+        "oc20_dense_medium": 5e-6,
+        "oc20_dense": 5e-6,
+        "oc20_2M": 5e-6
     },
 }
 
@@ -91,15 +106,14 @@ def load_config(model_path):
 
 
 def load_model(model_path, load_data=False, testing=True):
-    with initialize_config_dir(str(model_path)):
-        cfg = compose(config_name='hparams')
-        model = hydra.utils.instantiate(
-            cfg.model,
-            optim=cfg.optim,
-            data=cfg.data,
-            logging=cfg.logging,
-            _recursive_=False,
-        )
+    # Check if model_path is a directory or a checkpoint file
+    if model_path.is_file() and str(model_path).endswith('.ckpt'):
+        # If it's a checkpoint file, get the parent directory
+        config_dir = model_path.parent
+        ckpt = str(model_path)
+    else:
+        # If it's a directory, look for checkpoint files
+        config_dir = model_path
         ckpts = list(model_path.glob('*.ckpt'))
         if len(ckpts) > 0:
             ckpt = None
@@ -110,26 +124,40 @@ def load_model(model_path, load_data=False, testing=True):
                 ckpt_epochs = np.array(
                     [int(ckpt.parts[-1].split('-')[0].split('=')[1]) for ckpt in ckpts if 'last' not in ckpt.parts[-1]])
                 ckpt = str(ckpts[ckpt_epochs.argsort()[-1]])
-        hparams = os.path.join(model_path, "hparams.yaml")
+        else:
+            raise FileNotFoundError(f"No checkpoint files found in {model_path}")
+    
+    with initialize_config_dir(str(config_dir)):
+        cfg = compose(config_name='hparams')
+        model = hydra.utils.instantiate(
+            cfg.model,
+            optim=cfg.optim,
+            data=cfg.data,
+            logging=cfg.logging,
+            _recursive_=False,
+        )
+        hparams = os.path.join(config_dir, "hparams.yaml")
         model = model.load_from_checkpoint(ckpt, hparams_file=hparams, strict=False)
         try:
-            model.lattice_scaler = torch.load(model_path / 'lattice_scaler.pt')
-            model.scaler = torch.load(model_path / 'prop_scaler.pt')
+            model.lattice_scaler = torch.load(config_dir / 'lattice_scaler.pt')
+            model.scaler = torch.load(config_dir / 'prop_scaler.pt')
         except:
             pass
 
         if load_data:
             datamodule = hydra.utils.instantiate(
-                cfg.data.datamodule, _recursive_=False, scaler_path=model_path
+                cfg.data.datamodule, _recursive_=False, scaler_path=config_dir
             )
             if testing:
                 datamodule.setup('test')
                 test_loader = datamodule.test_dataloader()[0]
             else:
                 datamodule.setup()
-                train_loader = datamodule.train_dataloader(shuffle=False)
+                # train_loader = datamodule.train_dataloader(shuffle=False)
+                train_loader = datamodule.train_dataloader()
                 val_loader = datamodule.val_dataloader()[0]
-                test_loader = (train_loader, val_loader)
+                # test_loader = (train_loader, val_loader)
+                test_loader = val_loader
         else:
             test_loader = None
 

@@ -47,15 +47,44 @@ def build_callbacks(cfg: DictConfig) -> List[Callback]:
         )
 
     if "model_checkpoints" in cfg.train:
-        hydra.utils.log.info("Adding callback <ModelCheckpoint>")
+        hydra.utils.log.info("Adding callback <ModelCheckpoint> for train loss")
+        # Train loss checkpoint
         callbacks.append(
             ModelCheckpoint(
                 dirpath=Path(HydraConfig.get().run.dir),
-                monitor=cfg.train.monitor_metric,
-                mode=cfg.train.monitor_metric_mode,
-                save_top_k=cfg.train.model_checkpoints.save_top_k,
+                filename="epoch={epoch:02d}-train_loss",
+                monitor="train_loss_epoch",
+                mode="min",
+                save_top_k=1,
                 verbose=cfg.train.model_checkpoints.verbose,
-                save_last=cfg.train.model_checkpoints.save_last,
+                save_last=False,
+            )
+        )
+        
+        hydra.utils.log.info("Adding callback <ModelCheckpoint> for val loss")
+        # Val loss checkpoint
+        callbacks.append(
+            ModelCheckpoint(
+                dirpath=Path(HydraConfig.get().run.dir),
+                filename="epoch={epoch:02d}-val_loss",
+                monitor="val_loss",
+                mode="min",
+                save_top_k=1,
+                verbose=cfg.train.model_checkpoints.verbose,
+                save_last=False,
+            )
+        )
+        
+        hydra.utils.log.info("Adding callback <ModelCheckpoint> for latest epoch")
+        # Latest epoch checkpoint
+        callbacks.append(
+            ModelCheckpoint(
+                dirpath=Path(HydraConfig.get().run.dir),
+                filename="epoch={epoch:02d}-latest",
+                monitor=None,
+                save_top_k=0,  # monitor=None일 때는 save_top_k=0으로 설정
+                verbose=cfg.train.model_checkpoints.verbose,
+                save_last=True,  # 대신 save_last=True 사용
             )
         )
 

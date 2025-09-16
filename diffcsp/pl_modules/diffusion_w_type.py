@@ -45,7 +45,7 @@ class BaseModule(pl.LightningModule):
         scheduler = hydra.utils.instantiate(
             self.hparams.optim.lr_scheduler, optimizer=opt
         )
-        return {"optimizer": opt, "lr_scheduler": scheduler, "monitor": "val_loss"}
+        return {"optimizer": opt, "lr_scheduler": scheduler, "monitor": "train_loss_epoch"}
 
 
 ### Model definition
@@ -70,14 +70,17 @@ class CSPDiffusion(BaseModule):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         
-        self.decoder = hydra.utils.instantiate(self.hparams.decoder, latent_dim = self.hparams.latent_dim + self.hparams.time_dim, pred_type = True, smooth = True)
+        # Coordinate type option: 'frac' or 'cart'
+        self.coord_type = getattr(self.hparams, 'coord_type', 'frac')
+        
+        self.decoder = hydra.utils.instantiate(self.hparams.decoder, latent_dim = self.hparams.latent_dim + self.hparams.time_dim, pred_type = True, smooth = True, coord_type = self.coord_type)
         self.beta_scheduler = hydra.utils.instantiate(self.hparams.beta_scheduler)
         self.sigma_scheduler = hydra.utils.instantiate(self.hparams.sigma_scheduler)
         self.time_dim = self.hparams.time_dim
         self.time_embedding = SinusoidalTimeEmbeddings(self.time_dim)
         self.keep_lattice = self.hparams.cost_lattice < 1e-5
         self.keep_coords = self.hparams.cost_coord < 1e-5
-
+  
 
 
     def forward(self, batch):
@@ -97,13 +100,24 @@ class CSPDiffusion(BaseModule):
 
         lattices = lattice_params_to_matrix_torch(batch.lengths, batch.angles)
         frac_coords = batch.frac_coords
+        
+        if self.coord_type == 'cart':
+            # Convert fractional coordinates to cartesian coordinates
+            coords = frac_to_cart_coords(frac_coords, batch.lengths, batch.angles, batch.num_atoms, lattices=lattices)
+        else:
+            # Use fractional coordinates directly
+            coords = frac_coords
 
-        rand_l, rand_x = torch.randn_like(lattices), torch.randn_like(frac_coords)
+        rand_l, rand_x = torch.randn_like(lattices), torch.randn_like(coords)
 
         input_lattice = c0[:, None, None] * lattices + c1[:, None, None] * rand_l
         sigmas_per_atom = sigmas.repeat_interleave(batch.num_atoms)[:, None]
         sigmas_norm_per_atom = sigmas_norm.repeat_interleave(batch.num_atoms)[:, None]
-        input_frac_coords = (frac_coords + sigmas_per_atom * rand_x) % 1.
+        
+        if self.coord_type == 'cart':
+            input_coords = coords + sigmas_per_atom * rand_x
+        else:
+            input_coords = (coords + sigmas_per_atom * rand_x) % 1.
 
         gt_atom_types_onehot = F.one_hot(batch.atom_types - 1, num_classes=MAX_ATOMIC_NUM).float()
 
@@ -112,14 +126,20 @@ class CSPDiffusion(BaseModule):
         atom_type_probs = (c0.repeat_interleave(batch.num_atoms)[:, None] * gt_atom_types_onehot + c1.repeat_interleave(batch.num_atoms)[:, None] * rand_t)
 
         if self.keep_coords:
-            input_frac_coords = frac_coords
+            input_coords = coords
 
         if self.keep_lattice:
             input_lattice = lattices
 
-        pred_l, pred_x, pred_t = self.decoder(time_emb, atom_type_probs, input_frac_coords, input_lattice, batch.num_atoms, batch.batch)
+        pred_l, pred_x, pred_t = self.decoder(time_emb, atom_type_probs, input_coords, input_lattice, batch.num_atoms, batch.batch)
 
-        tar_x = d_log_p_wrapped_normal(sigmas_per_atom * rand_x, sigmas_per_atom) / torch.sqrt(sigmas_norm_per_atom)
+        # Calculate target based on coordinate type
+        if self.coord_type == 'cart':
+            # Use normal distribution for cartesian coordinates (no wrapping needed)
+            tar_x = rand_x / torch.sqrt(sigmas_norm_per_atom)
+        else:
+            # Use wrapped normal for fractional coordinates
+            tar_x = d_log_p_wrapped_normal(sigmas_per_atom * rand_x, sigmas_per_atom) / torch.sqrt(sigmas_norm_per_atom)
 
         loss_lattice = F.mse_loss(pred_l, rand_l)
         loss_coord = F.mse_loss(pred_x, tar_x)
@@ -144,13 +164,22 @@ class CSPDiffusion(BaseModule):
 
         batch_size = batch.num_graphs
 
-        l_T, x_T = torch.randn([batch_size, 3, 3]).to(self.device), torch.rand([batch.num_nodes, 3]).to(self.device)
+        l_T = torch.randn([batch_size, 3, 3]).to(self.device)
+        if self.coord_type == 'cart':
+            x_T = torch.randn([batch.num_nodes, 3]).to(self.device)
+        else:
+            x_T = torch.rand([batch.num_nodes, 3]).to(self.device)
 
         t_T = torch.randn([batch.num_nodes, MAX_ATOMIC_NUM]).to(self.device)
 
 
         if self.keep_coords:
-            x_T = batch.frac_coords
+            if self.coord_type == 'cart':
+                # Convert fractional coordinates to cartesian coordinates
+                x_T = frac_to_cart_coords(batch.frac_coords, batch.lengths, batch.angles, batch.num_atoms, lattices=lattice_params_to_matrix_torch(batch.lengths, batch.angles))
+            else:
+                # Use fractional coordinates directly
+                x_T = batch.frac_coords
 
         if self.keep_lattice:
             l_T = lattice_params_to_matrix_torch(batch.lengths, batch.angles)
@@ -159,7 +188,7 @@ class CSPDiffusion(BaseModule):
         traj = {self.beta_scheduler.timesteps : {
             'num_atoms' : batch.num_atoms,
             'atom_types' : t_T,
-            'frac_coords' : x_T % 1.,
+            'coords' : x_T if self.coord_type == 'cart' else x_T % 1.,
             'lattices' : l_T
         }}
 
@@ -179,7 +208,7 @@ class CSPDiffusion(BaseModule):
             c0 = 1.0 / torch.sqrt(alphas)
             c1 = (1 - alphas) / torch.sqrt(1 - alphas_cumprod)
 
-            x_t = traj[t]['frac_coords']
+            x_t = traj[t]['coords']
             l_t = traj[t]['lattices']
             t_t = traj[t]['atom_types']
 
@@ -233,14 +262,14 @@ class CSPDiffusion(BaseModule):
             traj[t - 1] = {
                 'num_atoms' : batch.num_atoms,
                 'atom_types' : t_t_minus_1,
-                'frac_coords' : x_t_minus_1 % 1.,
+                'coords' : x_t_minus_1 if self.coord_type == 'cart' else x_t_minus_1 % 1.,
                 'lattices' : l_t_minus_1              
             }
 
         traj_stack = {
             'num_atoms' : batch.num_atoms,
             'atom_types' : torch.stack([traj[i]['atom_types'] for i in range(self.beta_scheduler.timesteps, -1, -1)]).argmax(dim=-1) + 1,
-            'all_frac_coords' : torch.stack([traj[i]['frac_coords'] for i in range(self.beta_scheduler.timesteps, -1, -1)]),
+            'all_coords' : torch.stack([traj[i]['coords'] for i in range(self.beta_scheduler.timesteps, -1, -1)]),
             'all_lattices' : torch.stack([traj[i]['lattices'] for i in range(self.beta_scheduler.timesteps, -1, -1)])
         }
 
