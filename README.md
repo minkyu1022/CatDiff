@@ -1,110 +1,90 @@
-# Crystal Structure Prediction by Joint Equivariant Diffusion (NeurIPS 2023)
+# CatDiff: Diffusion Model for Catalyst Structure Generation
 
-Implementation codes for Crystal Structure Prediction by Joint Equivariant Diffusion (DiffCSP). 
+CatDiff is a diffusion-based generative model for catalyst structure generation. The model can simultaneously generate composition, lattice parameters, and atomic coordinates of crystal structures.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/jiaor17/DiffCSP/blob/main/LICENSE)   [**[Paper]**](https://arxiv.org/abs/2309.04475)
+## Key Features
 
-![Overview](fig/overview.png "Overview")
+- **Composition Prediction**: Predicts appropriate number of atoms and types based on given element combinations and ratios
+- **Structure Generation**: Simultaneously generates lattice parameters and atomic coordinates
+- **Adsorbate Handling**: Supports adding adsorbates to surface structures
+- **Flexible Coordinate System**: Supports both fractional and Cartesian coordinates
 
-![Demo](fig/demo.gif "Demo")
+## Model Architecture
 
-### Dependencies and Setup
+### CSPNet (Crystal Structure Prediction Network)
+- Graph neural network for encoding crystal structures
+- Includes atom embeddings, lattice information processing, and adsorbate handling
+- Edge generation methods: fully connected (fc) or k-nearest neighbors (knn)
 
-```
-python==3.8.13
-torch==1.9.0
-torch-geometric==1.7.2
-pytorch_lightning==1.3.8
-pymatgen==2023.8.10
-```
+### Diffusion Model
+- Generates crystal structures progressively from noise
+- Uses separate loss functions for composition, lattice, and coordinates
+- Implements PC sampling strategy
 
-Rename the `.env.template` file into `.env` and specify the following variables.
+## Configuration
 
-```
-PROJECT_ROOT: the absolute path of this repo
-HYDRA_JOBS: the absolute path to save hydra outputs
-WABDB_DIR: the absolute path to save wabdb outputs
+The project uses Hydra for configuration management. Key configuration files:
+- `conf/model/diffusion.yaml`: Diffusion model settings
+- `conf/model/decoder/cspnet.yaml`: CSPNet settings
+- `conf/data/*.yaml`: Dataset configurations
+- `conf/optim/default.yaml`: Optimization settings
+
+## Datasets
+
+Supported datasets:
+- **OC20**: Open Catalyst 2020 dataset
+  - Contains 130M+ relaxation trajectories
+  - Focuses on catalyst surface-adsorbate interactions
+- **OC20-Dense**: Dense subset of OC20
+  - Carefully curated for high-quality training
+  - Contains more complete relaxation trajectories
+
+## Usage
+
+### Environment Setup
+```bash
+# Create environment
+conda env create -f environment.yml
+
+# Activate environment
+conda activate catdiff
 ```
 
 ### Training
-
-For the CSP task
-
-```
-python diffcsp/run.py data=<dataset> expname=<expname>
-```
-
-For the Ab Initio Generation task
-
-```
-python diffcsp/run.py data=<dataset> model=diffusion_w_type expname=<expname>
+```python
+# Example training configuration
+python diffcsp/run.py \
+    model=diffusion \
+    data=oc20_2M \
+    optim=default
 ```
 
-The ``<dataset>`` tag can be selected from perov_5, mp_20, mpts_52 and carbon_24, and the ``<expname>`` tag can be an arbitrary name to identify each experiment. Pre-trained checkpoints are provided [here](https://drive.google.com/drive/folders/11WOc9lTZN4hkIY7SKLCIrbsTMGy9TsoW?usp=sharing).
-
-### Evaluation
-
-#### Stable structure prediction 
-
-One sample 
-
-```
-python scripts/evaluate.py --model_path <model_path> --dataset <dataset>
-python scripts/compute_metrics.py --root_path <model_path> --tasks csp --gt_file data/<dataset>/test.csv 
+### Structure Generation
+```python
+# Run generation script
+python scripts/generation.py \
+    checkpoint=path/to/checkpoint \
+    num_samples=100
 ```
 
-Multiple samples
-
+## Project Structure
 ```
-python scripts/evaluate.py --model_path <model_path> --dataset <dataset> --num_evals 20
-python scripts/compute_metrics.py --root_path <model_path> --tasks csp --gt_file data/<dataset>/test.csv --multi_eval
-```
-
-#### Ab initio generation
-
-```
-python scripts/generation.py --model_path <model_path> --dataset <dataset>
-python scripts/compute_metrics.py --root_path <model_path> --tasks gen --gt_file data/<dataset>/test.csv
-```
-
-
-#### Sample from arbitrary composition
-
-```
-python scripts/sample.py --model_path <model_path> --save_path <save_path> --formula <formula> --num_evals <num_evals>
+diffcsp/
+├── pl_modules/
+│   ├── diffusion.py     # Diffusion model implementation
+│   ├── cspnet.py        # Crystal structure encoder
+│   └── model.py         # Base model class
+├── pl_data/
+│   ├── datamodule.py    # PyTorch Lightning data module
+│   └── dataset.py       # Dataset implementation
+└── common/
+    ├── data_utils.py    # Data processing utilities
+    └── utils.py         # General utility functions
 ```
 
-#### Property Optimization
+## Notes
 
-```
-# train a time-dependent energy prediction model 
-python diffcsp/run.py data=<dataset> model=energy expname=<expname> data.datamodule.batch_size.test=100
-
-# Optimization
-python scripts/optimization.py --model_path <energy_model_path> --uncond_path <model_path>
-
-# Evaluation
-python scripts/compute_metrics.py --root_path <energy_model_path> --tasks opt
-```
-
-### Acknowledgments
-
-The main framework of this codebase is build upon [CDVAE](https://github.com/txie-93/cdvae). For the datasets, Perov-5, Carbon-24 and MP-20 are from [CDVAE](https://github.com/txie-93/cdvae), and MPTS-52 is collected from its original [codebase](https://github.com/sparks-baird/mp-time-split).
-
-### Citation
-
-Please consider citing our work if you find it helpful:
-```
-@article{jiao2023crystal,
-  title={Crystal structure prediction by joint equivariant diffusion},
-  author={Jiao, Rui and Huang, Wenbing and Lin, Peijia and Han, Jiaqi and Chen, Pin and Lu, Yutong and Liu, Yang},
-  journal={arXiv preprint arXiv:2309.04475},
-  year={2023}
-}
-```
-
-### Contact
-
-If you have any questions, feel free to reach us at:
-
-Rui Jiao: [jiaor21@mails.tsinghua.edu.cn](mailto:jiaor21@mails.tsinghua.edu.cn)
+- Model is implemented using PyTorch Lightning
+- Git LFS is recommended for large dataset handling
+- Training data should be stored in `data/` directory (git-ignored)
+- The model is primarily designed and tested on the OC20 dataset for catalyst structure generation
